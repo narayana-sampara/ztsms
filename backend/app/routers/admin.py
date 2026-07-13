@@ -34,7 +34,7 @@ from app.schemas import (
     UpdateStudentRequest,
     UpdateTutorRequest,
 )
-from app.security import hash_password
+from app.security import generate_default_password, hash_password
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -73,10 +73,13 @@ def create_student(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tutor does not exist.")
     if db.query(UserAccount).filter(UserAccount.email == request.email).first():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already in use.")
+    if db.query(UserAccount).filter(UserAccount.phone == request.phone).first():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Phone number is already in use.")
 
     student = StudentProfile(
         name=request.name,
         email=request.email,
+        phone=request.phone,
         board=request.board.strip().upper() if request.board.strip().upper() == "CBSC" else request.board.strip(),
         grade=normalize_grade(request.grade) if request.board.strip().upper() == "CBSC" else request.grade.strip(),
         tutor_id=request.tutor_id,
@@ -88,18 +91,20 @@ def create_student(
     db.add(student)
     db.flush()
     allocate_matching_curriculum(db, student)
+    temporary_password = generate_default_password()
     db.add(
         UserAccount(
             name=request.name,
             email=request.email,
-            password_hash=hash_password(request.password),
+            phone=request.phone,
+            password_hash=hash_password(temporary_password),
             role=UserRole.student,
             profile_id=student.id,
         )
     )
     db.commit()
     student = db.query(StudentProfile).options(selectinload(StudentProfile.parents)).filter(StudentProfile.id == student.id).one()
-    return student_out(student)
+    return student_out(student, temporary_password=temporary_password)
 
 
 @router.put("/students/{student_id}", response_model=StudentOut)
@@ -117,6 +122,7 @@ def update_student(
 
     student.name = request.name
     student.email = request.email
+    student.phone = request.phone
     student.board = request.board.strip().upper() if request.board.strip().upper() == "CBSC" else request.board.strip()
     student.grade = normalize_grade(request.grade) if student.board == "CBSC" else request.grade.strip()
     if request.tutor_id:
@@ -126,6 +132,7 @@ def update_student(
     if user:
         user.name = request.name
         user.email = request.email
+        user.phone = request.phone
     db.commit()
     db.refresh(student)
     return student_out(student)
@@ -200,16 +207,19 @@ def create_parent(
 ) -> ParentOut:
     if db.query(UserAccount).filter(UserAccount.email == request.email).first():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already in use.")
+    if db.query(UserAccount).filter(UserAccount.phone == request.phone).first():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Phone number is already in use.")
     linked_students = db.query(StudentProfile).filter(StudentProfile.id.in_(request.student_ids)).all() if request.student_ids else []
     if len(linked_students) != len(set(request.student_ids)):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="One or more students do not exist.")
     parent = ParentProfile(name=request.name, email=request.email, phone=request.phone, status=EntityStatus.active, students=linked_students)
     db.add(parent)
     db.flush()
-    db.add(UserAccount(name=request.name, email=request.email, password_hash=hash_password(request.password), role=UserRole.parent, profile_id=parent.id))
+    temporary_password = generate_default_password()
+    db.add(UserAccount(name=request.name, email=request.email, phone=request.phone, password_hash=hash_password(temporary_password), role=UserRole.parent, profile_id=parent.id))
     db.commit()
     db.refresh(parent)
-    return parent_out(parent)
+    return parent_out(parent, temporary_password=temporary_password)
 
 
 @router.put("/parents/{parent_id}", response_model=ParentOut)
@@ -229,6 +239,7 @@ def update_parent(
     if user:
         user.name = request.name
         user.email = request.email
+        user.phone = request.phone
     db.commit()
     db.refresh(parent)
     return parent_out(parent)
@@ -291,22 +302,26 @@ def create_tutor(
 ) -> TutorOut:
     if db.query(UserAccount).filter(UserAccount.email == request.email).first():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already in use.")
+    if db.query(UserAccount).filter(UserAccount.phone == request.phone).first():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Phone number is already in use.")
 
-    tutor = TutorProfile(name=request.name, email=request.email, subjects_csv=",".join(request.subjects), status=EntityStatus.active)
+    tutor = TutorProfile(name=request.name, email=request.email, phone=request.phone, subjects_csv=",".join(request.subjects), status=EntityStatus.active)
     db.add(tutor)
     db.flush()
+    temporary_password = generate_default_password()
     db.add(
         UserAccount(
             name=request.name,
             email=request.email,
-            password_hash=hash_password(request.password),
+            phone=request.phone,
+            password_hash=hash_password(temporary_password),
             role=UserRole.tutor,
             profile_id=tutor.id,
         )
     )
     db.commit()
     db.refresh(tutor)
-    return tutor_out(tutor)
+    return tutor_out(tutor, temporary_password=temporary_password)
 
 
 @router.put("/tutors/{tutor_id}", response_model=TutorOut)
@@ -322,11 +337,13 @@ def update_tutor(
 
     tutor.name = request.name
     tutor.email = request.email
+    tutor.phone = request.phone
     tutor.subjects_csv = ",".join(request.subjects)
     user = db.query(UserAccount).filter(UserAccount.profile_id == tutor.id, UserAccount.role == UserRole.tutor).one_or_none()
     if user:
         user.name = request.name
         user.email = request.email
+        user.phone = request.phone
     db.commit()
     db.refresh(tutor)
     return tutor_out(tutor)

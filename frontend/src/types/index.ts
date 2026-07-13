@@ -8,6 +8,7 @@ export type User = {
   id: string
   name: string
   email: string
+  phone?: string
   role: Role
   avatar: string
 }
@@ -16,6 +17,7 @@ export type Tutor = {
   id: string
   name: string
   email: string
+  phone?: string
   subjects: string[]
   status: 'Active' | 'Inactive'
   students: number
@@ -34,6 +36,7 @@ export type Student = {
   id: string
   name: string
   email: string
+  phone?: string
   board: string
   grade: string
   tutorId: string

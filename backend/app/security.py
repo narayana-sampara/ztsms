@@ -15,6 +15,15 @@ PASSWORD_ITERATIONS = 390_000
 SALT_BYTES = 16
 
 
+DEFAULT_PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
+
+
+def generate_default_password() -> str:
+    body = "".join(secrets.choice(DEFAULT_PASSWORD_ALPHABET) for _ in range(8))
+    symbol = secrets.choice("!@#$%")
+    return f"{body}{symbol}"
+
+
 def hash_password(password: str) -> str:
     salt = secrets.token_bytes(SALT_BYTES)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PASSWORD_ITERATIONS)

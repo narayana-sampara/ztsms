@@ -6,23 +6,26 @@ def split_subjects(subjects_csv: str) -> list[str]:
     return [item.strip() for item in subjects_csv.split(",") if item.strip()]
 
 
-def tutor_out(tutor: TutorProfile) -> TutorOut:
+def tutor_out(tutor: TutorProfile, temporary_password: str | None = None) -> TutorOut:
     return TutorOut(
         id=tutor.id,
         name=tutor.name,
         email=tutor.email,
+        phone=tutor.phone,
         subjects=split_subjects(tutor.subjects_csv),
         status=tutor.status,
         students=len(tutor.students),
+        temporary_password=temporary_password,
     )
 
 
-def student_out(student: StudentProfile) -> StudentOut:
+def student_out(student: StudentProfile, temporary_password: str | None = None) -> StudentOut:
     pending_fee = max(student.total_fee - student.fee_paid, 0)
     return StudentOut(
         id=student.id,
         name=student.name,
         email=student.email,
+        phone=student.phone,
         board=student.board,
         grade=student.grade,
         tutor_id=student.tutor_id,
@@ -33,10 +36,11 @@ def student_out(student: StudentProfile) -> StudentOut:
         pending_fee=pending_fee,
         fee_status=FeeStatus.completed if pending_fee == 0 else FeeStatus.pending,
         status=student.status,
+        temporary_password=temporary_password,
     )
 
 
-def parent_out(parent: ParentProfile) -> ParentOut:
+def parent_out(parent: ParentProfile, temporary_password: str | None = None) -> ParentOut:
     return ParentOut(
         id=parent.id,
         name=parent.name,
@@ -44,6 +48,7 @@ def parent_out(parent: ParentProfile) -> ParentOut:
         phone=parent.phone,
         student_ids=[student.id for student in parent.students],
         status=parent.status,
+        temporary_password=temporary_password,
     )
 
 

@@ -76,6 +76,7 @@ class UserAccount(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    phone: Mapped[str | None] = mapped_column(String(10), unique=True, index=True, nullable=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[UserRole] = mapped_column(Enum(UserRole, values_callable=_enum_values), nullable=False)
     profile_id: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -88,6 +89,7 @@ class TutorProfile(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    phone: Mapped[str | None] = mapped_column(String(10), unique=True, index=True, nullable=True)
     subjects_csv: Mapped[str] = mapped_column(String(500), default="", nullable=False)
     status: Mapped[EntityStatus] = mapped_column(Enum(EntityStatus, values_callable=_enum_values), default=EntityStatus.active, nullable=False)
 
@@ -101,6 +103,7 @@ class StudentProfile(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    phone: Mapped[str | None] = mapped_column(String(10), unique=True, index=True, nullable=True)
     board: Mapped[str] = mapped_column(String(80), nullable=False)
     grade: Mapped[str] = mapped_column(String(80), nullable=False)
     tutor_id: Mapped[str] = mapped_column(String, ForeignKey("tutors.id"), nullable=False)
@@ -122,7 +125,7 @@ class ParentProfile(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
-    phone: Mapped[str] = mapped_column(String(40), nullable=False)
+    phone: Mapped[str] = mapped_column(String(10), nullable=False)
     status: Mapped[EntityStatus] = mapped_column(Enum(EntityStatus, values_callable=_enum_values), default=EntityStatus.active, nullable=False)
 
     students: Mapped[list[StudentProfile]] = relationship(secondary=student_parent_table, back_populates="parents")

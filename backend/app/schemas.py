@@ -16,7 +16,7 @@ class UserOut(BaseModel):
 
 
 class AuthRequest(BaseModel):
-    email: str
+    identifier: str = Field(min_length=3, description="Email address or 10-digit phone number.")
     password: str
 
 
@@ -31,21 +31,24 @@ class TutorOut(BaseModel):
     id: str
     name: str
     email: str
+    phone: str | None = None
     subjects: list[str]
     status: EntityStatus
     students: int
+    temporary_password: str | None = None
 
 
 class CreateTutorRequest(BaseModel):
     name: str = Field(min_length=2)
     email: str
+    phone: str = Field(min_length=10, max_length=10, pattern=r"^\d{10}$")
     subjects: list[str] = []
-    password: str = Field(min_length=8)
 
 
 class UpdateTutorRequest(BaseModel):
     name: str = Field(min_length=2)
     email: str
+    phone: str = Field(min_length=10, max_length=10, pattern=r"^\d{10}$")
     subjects: list[str] = []
 
 
@@ -57,6 +60,7 @@ class StudentOut(BaseModel):
     id: str
     name: str
     email: str
+    phone: str | None = None
     board: str
     grade: str
     tutor_id: str
@@ -67,22 +71,24 @@ class StudentOut(BaseModel):
     pending_fee: int
     fee_status: FeeStatus
     status: EntityStatus
+    temporary_password: str | None = None
 
 
 class CreateStudentRequest(BaseModel):
     name: str = Field(min_length=2)
     email: str
+    phone: str = Field(min_length=10, max_length=10, pattern=r"^\d{10}$")
     board: str
     grade: str
     tutor_id: str
     total_fee: int = Field(default=0, ge=0)
     fee_paid: int = Field(default=0, ge=0)
-    password: str = Field(min_length=8)
 
 
 class UpdateStudentRequest(BaseModel):
     name: str = Field(min_length=2)
     email: str
+    phone: str = Field(min_length=10, max_length=10, pattern=r"^\d{10}$")
     board: str
     grade: str
     tutor_id: str | None = None
@@ -105,20 +111,20 @@ class ParentOut(BaseModel):
     phone: str
     student_ids: list[str]
     status: EntityStatus
+    temporary_password: str | None = None
 
 
 class CreateParentRequest(BaseModel):
     name: str = Field(min_length=2)
     email: str
-    phone: str = Field(min_length=8)
+    phone: str = Field(min_length=10, max_length=10, pattern=r"^\d{10}$")
     student_ids: list[str] = []
-    password: str = Field(min_length=8)
 
 
 class UpdateParentRequest(BaseModel):
     name: str = Field(min_length=2)
     email: str
-    phone: str = Field(min_length=8)
+    phone: str = Field(min_length=10, max_length=10, pattern=r"^\d{10}$")
 
 
 class LinkParentStudentRequest(BaseModel):

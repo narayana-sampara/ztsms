@@ -32,15 +32,19 @@ import {
 } from 'recharts'
 import { Layout, type ViewKey } from './components/Layout'
 import { Badge, Button, Card, Input, Label, ProgressBar, Select, StatCard } from './components/ui'
-import { seedData, users } from './data/seed'
+import { seedData } from './data/seed'
 import { formatDate, uid } from './lib/utils'
-import type { AppData, Assignment, AttendanceStatus, Parent, Role, Status, Student, Subject, Tutor, User } from './types'
+import { ApiError, login as apiLogin, createTutor as apiCreateTutor, createStudent as apiCreateStudent, createParent as apiCreateParent } from './lib/api'
+import type { AppData, Assignment, AttendanceStatus, Parent, Status, Student, Subject, Tutor, User } from './types'
 
 const queryClient = new QueryClient()
+
+const phoneSchema = z.string().regex(/^\d{10}$/, 'Enter a 10-digit phone number')
 
 const studentSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
+  phone: phoneSchema,
   board: z.string().min(2),
   grade: z.string().min(1),
   tutorId: z.string().min(1),
@@ -51,7 +55,7 @@ const studentSchema = z.object({
 const parentSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
-  phone: z.string().min(8),
+  phone: phoneSchema,
   studentId: z.string().min(1),
 })
 
@@ -101,9 +105,55 @@ function attendanceTone(status: AttendanceStatus) {
   return 'red'
 }
 
-function Login({ onLogin }: { onLogin: (user: User) => void }) {
-  const [role, setRole] = useState<Role>('Admin')
-  const selected = users.find((user) => user.role === role) ?? users[0]
+function isValidIdentifier(value: string) {
+  const trimmed = value.trim()
+  const isPhone = /^\d{10}$/.test(trimmed)
+  const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)
+  return isPhone || isEmail
+}
+
+function Login({ onLogin }: { onLogin: (user: User, token: string) => void }) {
+  const [identifier, setIdentifier] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    setError(null)
+
+    if (!isValidIdentifier(identifier)) {
+      setError('Enter a valid email address or a 10-digit phone number.')
+      return
+    }
+    if (!password) {
+      setError('Enter your password.')
+      return
+    }
+
+    setSubmitting(true)
+    try {
+      const response = await apiLogin(identifier.trim(), password)
+      const user: User = {
+        id: response.user.profile_id ?? response.user.id,
+        name: response.user.name,
+        email: response.user.email,
+        phone: response.user.phone ?? undefined,
+        role: response.user.role,
+        avatar: response.user.name
+          .split(' ')
+          .map((part) => part[0])
+          .join('')
+          .slice(0, 2)
+          .toUpperCase(),
+      }
+      onLogin(user, response.access_token)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Unable to reach the server. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   return (
     <main className="min-h-screen bg-slate-950">
@@ -130,33 +180,92 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
         <section className="flex items-center justify-center bg-slate-50 px-6 py-10">
           <Card className="w-full max-w-md p-6">
             <div className="mb-6">
-              <p className="text-sm font-semibold uppercase tracking-wide text-teal-700">Demo login</p>
-              <h2 className="mt-2 text-2xl font-bold text-slate-950">Choose a workspace</h2>
-              <p className="mt-2 text-sm text-slate-500">Each role opens a tailored MVP workflow using seeded local data.</p>
+              <p className="text-sm font-semibold uppercase tracking-wide text-teal-700">Sign in</p>
+              <h2 className="mt-2 text-2xl font-bold text-slate-950">Welcome back</h2>
+              <p className="mt-2 text-sm text-slate-500">Use the email or 10-digit phone number and password issued to your account.</p>
             </div>
-            <div className="space-y-4">
+            <form className="space-y-4" onSubmit={handleSubmit}>
               <div>
-                <Label>Role</Label>
-                <Select value={role} onChange={(event) => setRole(event.target.value as Role)}>
-                  {users.map((user) => (
-                    <option key={user.id} value={user.role}>
-                      {user.role} - {user.name}
-                    </option>
-                  ))}
-                </Select>
+                <Label>Email or phone number</Label>
+                <Input
+                  value={identifier}
+                  onChange={(event) => setIdentifier(event.target.value)}
+                  placeholder="you@example.com or 10-digit phone"
+                  autoComplete="username"
+                />
               </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <p className="font-semibold text-slate-950">{selected.name}</p>
-                <p className="text-sm text-slate-500">{selected.email}</p>
+              <div>
+                <Label>Password</Label>
+                <Input
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="Password"
+                  autoComplete="current-password"
+                />
               </div>
-              <Button className="w-full" onClick={() => onLogin(selected)}>
-                Open {role} dashboard
+              {error && <p className="text-sm text-rose-600">{error}</p>}
+              <Button type="submit" className="w-full" disabled={submitting}>
+                {submitting ? 'Signing in…' : 'Sign in'}
               </Button>
-            </div>
+            </form>
           </Card>
         </section>
       </div>
     </main>
+  )
+}
+
+function CredentialsDialog({
+  title,
+  identifierLabel,
+  identifier,
+  password,
+  onClose,
+}: {
+  title: string
+  identifierLabel: string
+  identifier: string
+  password: string
+  onClose: () => void
+}) {
+  const [copied, setCopied] = useState(false)
+
+  async function copyCredentials() {
+    const text = `${identifierLabel}: ${identifier}\nPassword: ${password}`
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      setCopied(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <button className="absolute inset-0 bg-slate-950/50" aria-label="Close credentials dialog" onClick={onClose} />
+      <Card className="relative z-10 w-full max-w-md p-6 shadow-xl">
+        <h2 className="text-xl font-bold text-slate-950">{title}</h2>
+        <p className="mt-1 text-sm text-slate-500">Share these sign-in details now. The password will not be shown again.</p>
+        <div className="mt-5 space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{identifierLabel}</p>
+            <p className="font-mono text-sm text-slate-950">{identifier}</p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Temporary password</p>
+            <p className="font-mono text-sm text-slate-950">{password}</p>
+          </div>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="secondary" onClick={copyCredentials}>
+            {copied ? 'Copied' : 'Copy credentials'}
+          </Button>
+          <Button onClick={onClose}>Done</Button>
+        </div>
+      </Card>
+    </div>
   )
 }
 
@@ -290,19 +399,35 @@ function Dashboard({ data, user }: { data: AppData; user: User }) {
   )
 }
 
-function AdminTutors({ data, setData, user }: { data: AppData; setData: React.Dispatch<React.SetStateAction<AppData>>; user: User }) {
+function AdminTutors({
+  data,
+  setData,
+  user,
+  token,
+}: {
+  data: AppData
+  setData: React.Dispatch<React.SetStateAction<AppData>>
+  user: User
+  token: string | null
+}) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
   const [subjects, setSubjects] = useState('')
   const [createTutorOpen, setCreateTutorOpen] = useState(false)
   const [editingTutorId, setEditingTutorId] = useState<string | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [credentials, setCredentials] = useState<{ email: string; password: string } | null>(null)
   const canManageTutors = user.role === 'Admin'
 
   function openCreateTutor() {
     setEditingTutorId(null)
     setName('')
     setEmail('')
+    setPhone('')
     setSubjects('')
+    setFormError(null)
     setCreateTutorOpen(true)
   }
 
@@ -311,42 +436,57 @@ function AdminTutors({ data, setData, user }: { data: AppData; setData: React.Di
     setEditingTutorId(null)
     setName('')
     setEmail('')
+    setPhone('')
     setSubjects('')
+    setFormError(null)
   }
 
-  function submitTutor() {
+  async function submitTutor() {
     if (!canManageTutors) return
     if (!name || !email) return
+    const subjectList = subjects.split(',').map((item) => item.trim()).filter(Boolean)
     if (editingTutorId) {
       setData((current) => ({
         ...current,
         tutors: current.tutors.map((tutor) =>
-          tutor.id === editingTutorId
-            ? {
-                ...tutor,
-                name,
-                email,
-                subjects: subjects
-                  .split(',')
-                  .map((item) => item.trim())
-                  .filter(Boolean),
-              }
-            : tutor,
+          tutor.id === editingTutorId ? { ...tutor, name, email, phone, subjects: subjectList } : tutor,
         ),
       }))
       closeTutorModal()
       return
     }
-    const tutor: Tutor = {
-      id: uid('t'),
-      name,
-      email,
-      subjects: subjects.split(',').map((item) => item.trim()).filter(Boolean),
-      status: 'Active',
-      students: 0,
+
+    if (!/^\d{10}$/.test(phone)) {
+      setFormError('Enter a 10-digit phone number.')
+      return
     }
-    setData((current) => ({ ...current, tutors: [tutor, ...current.tutors] }))
-    closeTutorModal()
+    if (!token) {
+      setFormError('You must be signed in as an Admin to create tutors.')
+      return
+    }
+    setSubmitting(true)
+    setFormError(null)
+    try {
+      const created = await apiCreateTutor({ name, email, phone, subjects: subjectList }, token)
+      const tutor: Tutor = {
+        id: created.id,
+        name: created.name,
+        email: created.email,
+        phone: created.phone ?? undefined,
+        subjects: created.subjects,
+        status: created.status,
+        students: created.students,
+      }
+      setData((current) => ({ ...current, tutors: [tutor, ...current.tutors] }))
+      closeTutorModal()
+      if (created.temporary_password) {
+        setCredentials({ email: created.email, password: created.temporary_password })
+      }
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : 'Unable to create tutor.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   function startEditTutor(tutor: Tutor) {
@@ -354,7 +494,9 @@ function AdminTutors({ data, setData, user }: { data: AppData; setData: React.Di
     setEditingTutorId(tutor.id)
     setName(tutor.name)
     setEmail(tutor.email)
+    setPhone(tutor.phone ?? '')
     setSubjects(tutor.subjects.join(', '))
+    setFormError(null)
     setCreateTutorOpen(true)
   }
 
@@ -412,21 +554,36 @@ function AdminTutors({ data, setData, user }: { data: AppData; setData: React.Di
                 <Input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="tutor@example.com" />
               </div>
               <div>
+                <Label>Phone (10 digits)</Label>
+                <Input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="9800000000" maxLength={10} />
+              </div>
+              <div>
                 <Label>Subjects</Label>
                 <Input value={subjects} onChange={(event) => setSubjects(event.target.value)} placeholder="Mathematics, Physics" />
               </div>
+              {formError && <p className="text-sm text-rose-600">{formError}</p>}
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="secondary" onClick={closeTutorModal}>
                   Cancel
                 </Button>
-                <Button onClick={submitTutor} disabled={!canManageTutors}>
+                <Button onClick={submitTutor} disabled={!canManageTutors || submitting}>
                   {editingTutorId ? <Save size={16} /> : <Plus size={16} />}
-                  {editingTutorId ? 'Update tutor' : 'Add tutor'}
+                  {editingTutorId ? 'Update tutor' : submitting ? 'Creating…' : 'Add tutor'}
                 </Button>
               </div>
             </div>
           </Card>
         </div>
+      )}
+
+      {credentials && (
+        <CredentialsDialog
+          title="Tutor account created"
+          identifierLabel="Email"
+          identifier={credentials.email}
+          password={credentials.password}
+          onClose={() => setCredentials(null)}
+        />
       )}
 
       <Card>
@@ -492,13 +649,26 @@ function AdminTutors({ data, setData, user }: { data: AppData; setData: React.Di
   )
 }
 
-function Students({ data, setData, user }: { data: AppData; setData: React.Dispatch<React.SetStateAction<AppData>>; user: User }) {
+function Students({
+  data,
+  setData,
+  user,
+  token,
+}: {
+  data: AppData
+  setData: React.Dispatch<React.SetStateAction<AppData>>
+  user: User
+  token: string | null
+}) {
   const { register, handleSubmit, reset, formState } = useForm<z.infer<typeof studentSchema>>({
     resolver: zodResolver(studentSchema),
     defaultValues: { board: 'CBSC', grade: 'Grade 5', tutorId: data.tutors[0]?.id ?? '', totalFee: 0, feePaid: 0 },
   })
   const [createStudentOpen, setCreateStudentOpen] = useState(false)
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [credentials, setCredentials] = useState<{ email: string; password: string } | null>(null)
   const canManageStudents = user.role === 'Admin'
   const visibleStudents =
     user.role === 'Tutor'
@@ -517,17 +687,19 @@ function Students({ data, setData, user }: { data: AppData; setData: React.Dispa
 
   function openCreateStudent() {
     setEditingStudentId(null)
-    reset({ name: '', email: '', board: 'CBSC', grade: 'Grade 5', tutorId: data.tutors[0]?.id ?? '', totalFee: 0, feePaid: 0 })
+    reset({ name: '', email: '', phone: '', board: 'CBSC', grade: 'Grade 5', tutorId: data.tutors[0]?.id ?? '', totalFee: 0, feePaid: 0 })
+    setFormError(null)
     setCreateStudentOpen(true)
   }
 
   function closeStudentModal() {
     setCreateStudentOpen(false)
     setEditingStudentId(null)
-    reset({ name: '', email: '', board: 'CBSC', grade: 'Grade 5', tutorId: data.tutors[0]?.id ?? '', totalFee: 0, feePaid: 0 })
+    reset({ name: '', email: '', phone: '', board: 'CBSC', grade: 'Grade 5', tutorId: data.tutors[0]?.id ?? '', totalFee: 0, feePaid: 0 })
+    setFormError(null)
   }
 
-  function onSubmit(values: z.infer<typeof studentSchema>) {
+  async function onSubmit(values: z.infer<typeof studentSchema>) {
     if (!canManageStudents) return
     const normalizedBoard = values.board.trim().toUpperCase() === 'CBSC' ? 'CBSC' : values.board.trim()
     const normalizedGrade = normalizedBoard === 'CBSC' ? normalizeGrade(values.grade) : values.grade.trim()
@@ -545,25 +717,73 @@ function Students({ data, setData, user }: { data: AppData; setData: React.Dispa
       closeStudentModal()
       return
     }
-    const student: Student = {
-      id: uid('s'),
-      ...values,
-      board: normalizedBoard,
-      grade: normalizedGrade,
-      parentIds: [],
-      progress: 0,
-      pendingFee: fee.pendingFee,
-      feeStatus: fee.feeStatus,
-      status: 'Active',
+
+    if (!token) {
+      setFormError('You must be signed in as an Admin to create students.')
+      return
     }
-    setData((current) => ({ ...current, students: [student, ...current.students], subjects: syncCurriculumAllocations(current.subjects, student.id, normalizedBoard, normalizedGrade) }))
-    closeStudentModal()
+    setSubmitting(true)
+    setFormError(null)
+    try {
+      const created = await apiCreateStudent(
+        {
+          name: values.name,
+          email: values.email,
+          phone: values.phone,
+          board: normalizedBoard,
+          grade: normalizedGrade,
+          tutor_id: values.tutorId,
+          total_fee: values.totalFee,
+          fee_paid: values.feePaid,
+        },
+        token,
+      )
+      const student: Student = {
+        id: created.id,
+        name: created.name,
+        email: created.email,
+        phone: created.phone ?? undefined,
+        board: created.board,
+        grade: created.grade,
+        tutorId: created.tutor_id,
+        parentIds: created.parent_ids,
+        progress: created.progress,
+        totalFee: created.total_fee,
+        feePaid: created.fee_paid,
+        pendingFee: created.pending_fee,
+        feeStatus: created.fee_status,
+        status: created.status,
+      }
+      setData((current) => ({
+        ...current,
+        students: [student, ...current.students],
+        subjects: syncCurriculumAllocations(current.subjects, student.id, normalizedBoard, normalizedGrade),
+      }))
+      closeStudentModal()
+      if (created.temporary_password) {
+        setCredentials({ email: created.email, password: created.temporary_password })
+      }
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : 'Unable to create student.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   function startEditStudent(student: Student) {
     if (!canManageStudents) return
     setEditingStudentId(student.id)
-    reset({ name: student.name, email: student.email, board: student.board, grade: student.grade, tutorId: student.tutorId, totalFee: student.totalFee, feePaid: student.feePaid })
+    reset({
+      name: student.name,
+      email: student.email,
+      phone: student.phone ?? '',
+      board: student.board,
+      grade: student.grade,
+      tutorId: student.tutorId,
+      totalFee: student.totalFee,
+      feePaid: student.feePaid,
+    })
+    setFormError(null)
     setCreateStudentOpen(true)
   }
 
@@ -625,6 +845,10 @@ function Students({ data, setData, user }: { data: AppData; setData: React.Dispa
                 <Label>Email</Label>
                 <Input {...register('email')} placeholder="student@example.com" />
               </div>
+              <div>
+                <Label>Phone (10 digits)</Label>
+                <Input {...register('phone')} placeholder="9800000000" maxLength={10} />
+              </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <Label>Board</Label>
@@ -660,18 +884,30 @@ function Students({ data, setData, user }: { data: AppData; setData: React.Dispa
                 </div>
               </div>
               {formState.errors.name && <p className="text-sm text-rose-600">Enter a valid student name.</p>}
+              {formState.errors.phone && <p className="text-sm text-rose-600">{formState.errors.phone.message}</p>}
+              {formError && <p className="text-sm text-rose-600">{formError}</p>}
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="secondary" type="button" onClick={closeStudentModal}>
                   Cancel
                 </Button>
-                <Button type="submit">
+                <Button type="submit" disabled={submitting}>
                   {editingStudentId ? <Save size={16} /> : <UserRoundPlus size={16} />}
-                  {editingStudentId ? 'Update student' : 'Create student'}
+                  {editingStudentId ? 'Update student' : submitting ? 'Creating…' : 'Create student'}
                 </Button>
               </div>
             </form>
           </Card>
         </div>
+      )}
+
+      {credentials && (
+        <CredentialsDialog
+          title="Student account created"
+          identifierLabel="Email"
+          identifier={credentials.email}
+          password={credentials.password}
+          onClose={() => setCredentials(null)}
+        />
       )}
 
       <Card>
@@ -794,13 +1030,26 @@ function Students({ data, setData, user }: { data: AppData; setData: React.Dispa
   )
 }
 
-function Parents({ data, setData, user }: { data: AppData; setData: React.Dispatch<React.SetStateAction<AppData>>; user: User }) {
-  const { register, handleSubmit, reset } = useForm<z.infer<typeof parentSchema>>({
+function Parents({
+  data,
+  setData,
+  user,
+  token,
+}: {
+  data: AppData
+  setData: React.Dispatch<React.SetStateAction<AppData>>
+  user: User
+  token: string | null
+}) {
+  const { register, handleSubmit, reset, formState } = useForm<z.infer<typeof parentSchema>>({
     resolver: zodResolver(parentSchema),
     defaultValues: { studentId: data.students[0]?.id },
   })
   const [createParentOpen, setCreateParentOpen] = useState(false)
   const [editingParentId, setEditingParentId] = useState<string | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [credentials, setCredentials] = useState<{ email: string; password: string } | null>(null)
   const canManageParents = user.role === 'Admin'
   const tutorStudents = data.students
   const tutorStudentIds = new Set(tutorStudents.map((student) => student.id))
@@ -812,6 +1061,7 @@ function Parents({ data, setData, user }: { data: AppData; setData: React.Dispat
   function openCreateParent() {
     setEditingParentId(null)
     reset({ name: '', email: '', phone: '', studentId: tutorStudents[0]?.id ?? '' })
+    setFormError(null)
     setCreateParentOpen(true)
   }
 
@@ -819,9 +1069,10 @@ function Parents({ data, setData, user }: { data: AppData; setData: React.Dispat
     setCreateParentOpen(false)
     setEditingParentId(null)
     reset({ name: '', email: '', phone: '', studentId: tutorStudents[0]?.id ?? '' })
+    setFormError(null)
   }
 
-  function onSubmit(values: z.infer<typeof parentSchema>) {
+  async function onSubmit(values: z.infer<typeof parentSchema>) {
     const linkedStudentId = tutorStudentIds.has(values.studentId) ? values.studentId : tutorStudents[0]?.id
     if (!canManageParents || !linkedStudentId) return
     if (editingParentId) {
@@ -845,22 +1096,39 @@ function Parents({ data, setData, user }: { data: AppData; setData: React.Dispat
       closeParentModal()
       return
     }
-    const parent: Parent = {
-      id: uid('p'),
-      name: values.name,
-      email: values.email,
-      phone: values.phone,
-      studentIds: [linkedStudentId],
-      status: 'Active',
+
+    if (!token) {
+      setFormError('You must be signed in as an Admin to create parents.')
+      return
     }
-    setData((current) => ({
-      ...current,
-      parents: [parent, ...current.parents],
-      students: current.students.map((student) =>
-        student.id === linkedStudentId ? { ...student, parentIds: [...new Set([...student.parentIds, parent.id])] } : student,
-      ),
-    }))
-    closeParentModal()
+    setSubmitting(true)
+    setFormError(null)
+    try {
+      const created = await apiCreateParent({ name: values.name, email: values.email, phone: values.phone, student_ids: [linkedStudentId] }, token)
+      const parent: Parent = {
+        id: created.id,
+        name: created.name,
+        email: created.email,
+        phone: created.phone,
+        studentIds: created.student_ids,
+        status: created.status,
+      }
+      setData((current) => ({
+        ...current,
+        parents: [parent, ...current.parents],
+        students: current.students.map((student) =>
+          student.id === linkedStudentId ? { ...student, parentIds: [...new Set([...student.parentIds, parent.id])] } : student,
+        ),
+      }))
+      closeParentModal()
+      if (created.temporary_password) {
+        setCredentials({ email: created.email, password: created.temporary_password })
+      }
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : 'Unable to create parent.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   function linkParent(parentId: string, studentId: string) {
@@ -935,8 +1203,8 @@ function Parents({ data, setData, user }: { data: AppData; setData: React.Dispat
                 <Input {...register('email')} placeholder="parent@example.com" />
               </div>
               <div>
-                <Label>Phone</Label>
-                <Input {...register('phone')} placeholder="+91 ..." />
+                <Label>Phone (10 digits)</Label>
+                <Input {...register('phone')} placeholder="9800000000" maxLength={10} />
               </div>
               <div>
                 <Label>Link child</Label>
@@ -948,18 +1216,30 @@ function Parents({ data, setData, user }: { data: AppData; setData: React.Dispat
                   ))}
                 </Select>
               </div>
+              {formState.errors.phone && <p className="text-sm text-rose-600">{formState.errors.phone.message}</p>}
+              {formError && <p className="text-sm text-rose-600">{formError}</p>}
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="secondary" type="button" onClick={closeParentModal}>
                   Cancel
                 </Button>
-                <Button type="submit">
+                <Button type="submit" disabled={submitting}>
                   {editingParentId ? <Save size={16} /> : <Users size={16} />}
-                  {editingParentId ? 'Update parent' : 'Create parent'}
+                  {editingParentId ? 'Update parent' : submitting ? 'Creating…' : 'Create parent'}
                 </Button>
               </div>
             </form>
           </Card>
         </div>
+      )}
+
+      {credentials && (
+        <CredentialsDialog
+          title="Parent account created"
+          identifierLabel="Email"
+          identifier={credentials.email}
+          password={credentials.password}
+          onClose={() => setCredentials(null)}
+        />
       )}
 
       <Card>
@@ -1964,28 +2244,31 @@ function Feedback({ data, setData, user }: { data: AppData; setData: React.Dispa
 
 function AppShell() {
   const [user, setUser] = useState<User | null>(null)
+  const [token, setToken] = useState<string | null>(null)
   const [view, setView] = useState<ViewKey>('dashboard')
   const [data, setData] = useState<AppData>(seedData)
 
   const page = useMemo(() => {
     if (!user) return null
     if (view === 'dashboard') return <Dashboard data={data} user={user} />
-    if (view === 'tutors') return <AdminTutors data={data} setData={setData} user={user} />
-    if (view === 'students') return <Students data={data} setData={setData} user={user} />
-    if (view === 'parents') return user.role === 'Admin' ? <Parents data={data} setData={setData} user={user} /> : <Dashboard data={data} user={user} />
+    if (view === 'tutors') return <AdminTutors data={data} setData={setData} user={user} token={token} />
+    if (view === 'students') return <Students data={data} setData={setData} user={user} token={token} />
+    if (view === 'parents')
+      return user.role === 'Admin' ? <Parents data={data} setData={setData} user={user} token={token} /> : <Dashboard data={data} user={user} />
     if (view === 'curriculum') return <CurriculumModalView data={data} setData={setData} user={user} />
     if (view === 'resources') return <Resources data={data} user={user} />
     if (view === 'assignments') return <Assignments data={data} setData={setData} user={user} />
     if (view === 'attendance') return <Attendance data={data} setData={setData} user={user} />
     if (view === 'feedback') return <Feedback data={data} setData={setData} user={user} />
     return <Dashboard data={data} user={user} />
-  }, [data, user, view])
+  }, [data, user, view, token])
 
   if (!user) {
     return (
       <Login
-        onLogin={(selectedUser) => {
-          setUser(selectedUser)
+        onLogin={(loggedInUser, accessToken) => {
+          setUser(loggedInUser)
+          setToken(accessToken)
           setView('dashboard')
         }}
       />
@@ -1999,6 +2282,7 @@ function AppShell() {
       onViewChange={setView}
       onLogout={() => {
         setUser(null)
+        setToken(null)
         setView('dashboard')
       }}
     >

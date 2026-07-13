@@ -35,6 +35,7 @@ def ensure_seeded(db: Session) -> None:
         id="t-1",
         name="Arjun Rao",
         email="arjun@zenith.test",
+        phone="9800000001",
         subjects_csv="Mathematics,Physics",
         status=EntityStatus.active,
     )
@@ -42,6 +43,7 @@ def ensure_seeded(db: Session) -> None:
         id="t-2",
         name="Leena Mathew",
         email="leena@zenith.test",
+        phone="9800000002",
         subjects_csv="English,Social Science",
         status=EntityStatus.active,
     )
@@ -49,6 +51,7 @@ def ensure_seeded(db: Session) -> None:
         id="s-1",
         name="Anika Shah",
         email="anika@zenith.test",
+        phone="9800000003",
         board="CBSC",
         grade="Grade 5",
         tutor=arjun,
@@ -61,6 +64,7 @@ def ensure_seeded(db: Session) -> None:
         id="s-2",
         name="Kabir Shah",
         email="kabir@zenith.test",
+        phone="9800000004",
         board="CBSC",
         grade="Grade 6",
         tutor=arjun,
@@ -73,7 +77,7 @@ def ensure_seeded(db: Session) -> None:
         id="p-1",
         name="Rhea Shah",
         email="rhea@zenith.test",
-        phone="+91 90000 12345",
+        phone="9800000005",
         status=EntityStatus.active,
         students=[anika, kabir],
     )
@@ -140,10 +144,10 @@ def ensure_seeded(db: Session) -> None:
                 date=date(2026, 6, 11),
                 message="Kabir understands force diagrams but needs to submit the pending worksheet.",
             ),
-            UserAccount(id="u-admin", name="Meera Admin", email="admin@zenith.test", role=UserRole.admin, password_hash=hash_password("Password123!")),
-            UserAccount(id="u-t-1", name=arjun.name, email=arjun.email, role=UserRole.tutor, profile_id=arjun.id, password_hash=hash_password("Password123!")),
-            UserAccount(id="u-s-1", name=anika.name, email=anika.email, role=UserRole.student, profile_id=anika.id, password_hash=hash_password("Password123!")),
-            UserAccount(id="u-p-1", name=rhea.name, email=rhea.email, role=UserRole.parent, profile_id=rhea.id, password_hash=hash_password("Password123!")),
+            UserAccount(id="u-admin", name="Meera Admin", email="admin@zenith.test", phone="9800000000", role=UserRole.admin, password_hash=hash_password("Password123!")),
+            UserAccount(id="u-t-1", name=arjun.name, email=arjun.email, phone=arjun.phone, role=UserRole.tutor, profile_id=arjun.id, password_hash=hash_password("Password123!")),
+            UserAccount(id="u-s-1", name=anika.name, email=anika.email, phone=anika.phone, role=UserRole.student, profile_id=anika.id, password_hash=hash_password("Password123!")),
+            UserAccount(id="u-p-1", name=rhea.name, email=rhea.email, phone=rhea.phone, role=UserRole.parent, profile_id=rhea.id, password_hash=hash_password("Password123!")),
             CurriculumProgress(subject_id="sub-1", student_id="s-1", progress=68),
         ]
     )
