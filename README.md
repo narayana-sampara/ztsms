@@ -29,10 +29,10 @@ cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --port 9000
 ```
 
-Swagger is available at `http://127.0.0.1:8000/docs`.
+Swagger is available at `http://127.0.0.1:9000/docs`.
 
 Seeded demo logins use:
 
