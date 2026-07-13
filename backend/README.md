@@ -9,13 +9,13 @@ cd backend
 python -m venv .venv
 .\\.venv\\Scripts\\Activate.ps1
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 9000
+uvicorn app.main:app --reload --port 9091
 ```
 
 API docs:
 
-- Swagger: `http://127.0.0.1:9000/docs`
-- ReDoc: `http://127.0.0.1:9000/redoc`
+- Swagger: `http://127.0.0.1:9091/docs`
+- ReDoc: `http://127.0.0.1:9091/redoc`
 
 Seeded users all use password `Password123!`:
 
